@@ -1,2 +1,52 @@
-# newsbot
-Bot to public news
+# Auto Publisher — DLE-плагин для ChristNews
+
+Плагин для **DataLife Engine** (DLE), который принимает уже одобренные новости от Telegram-бота **ChristNews** и публикует их на сайте автоматически, без дополнительной модерации на стороне DLE.
+
+**ChristNews** — Telegram-бот, который собирает новости из RSS-источников, показывает их модератору в Telegram, при одобрении переписывает текст через LLM и публикует результат в Telegram-каналы и/или на сайты на DLE (этот плагин — как раз мост до сайта). Исходный код бота не публикуется в этом репозитории — здесь только сайтовая сторона интеграции: DLE-плагин, который бот вызывает по HTTP.
+
+Этот репозиторий — публичная витрина только для самого плагина: сюда попадают только файлы, нужные для установки/обновления, без внутренней истории разработки.
+
+## Как это работает
+Бот при публикации отправляет `POST /index.php?do=auto_publisher` с заголовком `X-AutoPublisher-Token: <токен>` и JSON-телом (`title`, `teaser`, `body`, `source_url`, `external_id`, опционально `image` — base64 AI-обложка). Плагин:
+1. Проверяет токен (`hash_equals`, ничего не логирует).
+2. Проверяет, не публиковалась ли уже новость с этим `external_id` (идемпотентность — повторный запрос просто вернёт уже существующий пост, не задублирует).
+3. Валидирует поля, вставляет новость в `dle_post` сразу одобренной (`approve=1`).
+4. Если передана картинка — сохраняет её в `uploads/auto_publisher/` и, по настройке в админке, либо вставляет `<img>` в текст статьи, либо кладёт значение в `xfields`-поле категории (в тело / `[xfield_img]` / `[xfield_text]`).
+5. Возвращает `{"success": true, "post_id": ..., "url": "..."}`.
+
+## Установка
+1. Загрузить [`DLE_Plugin/auto_publisher.xml`](DLE_Plugin/auto_publisher.xml) через админку сайта: **Плагины → Загрузить плагин**.
+2. Скопировать на сервер (руками, без ZIP-упаковки):
+   - [`DLE_Plugin/engine/modules/auto_publisher.php`](DLE_Plugin/engine/modules/auto_publisher.php)
+   - [`DLE_Plugin/engine/inc/auto_publisher_lib.php`](DLE_Plugin/engine/inc/auto_publisher_lib.php)
+   - [`DLE_Plugin/engine/inc/auto_publisher_admin.php`](DLE_Plugin/engine/inc/auto_publisher_admin.php)
+
+   в соответствующие папки DLE на сервере. Либо загрузить готовый архив `DLE_Plugin/auto_publisher_<версия>.zip` через **Плагины → раздел плагина → Загрузить обновление** (см. «Обновление» ниже) — структура папок внутри архива уже правильная.
+3. **Обязательный шаг** — в `main.tpl` активного шаблона (`templates/<ваш-скин>/main.tpl`) найти тег `{content}` и обернуть его (нужен только **один** такой блок, поставленный **первым** в файле, до остальных `{content}`):
+   ```smarty
+   [available=auto_publisher]{include file="engine/modules/auto_publisher.php"}[/available]
+   [not-available=auto_publisher]{content}[/not-available]
+   ```
+4. Админка → раздел **«Auto Publisher»** → выбрать категорию для публикаций, указать логин технического автора (пользователь должен существовать заранее), сохранить — сгенерируется токен. Скопировать его сразу — повторно в открытом виде не показывается.
+5. Проверить:
+   ```bash
+   curl -X POST "https://ваш-сайт.ru/index.php?do=auto_publisher" \
+     -H "X-AutoPublisher-Token: <токен из админки>" \
+     -H "Content-Type: application/json" \
+     -d '{"external_id": 1, "title": "Тестовая новость", "teaser": "Короткий тизер.", "body": "Тело новости.", "source_url": "https://example.com"}'
+   ```
+   Ожидаемый ответ: `{"success":true,"post_id":...,"url":"...","duplicate":false}`.
+
+## Обновление
+В админке DLE: **Плагины → Auto Publisher → «Ссылка на обновление плагина»** — вставить:
+```
+https://raw.githubusercontent.com/ivan-tester/newsbot/main/DLE_Plugin/auto_publisher.xml
+```
+и нажать **«Проверить обновления»**. При выходе новой версии там же появится кнопка **«Загрузить обновление»**.
+
+Если у вашей версии DLE нет такого поля/кнопки — обновление можно сделать и вручную: скачать актуальный `DLE_Plugin/auto_publisher_<версия>.zip` из этого репозитория и загрузить его через **Плагины → раздел плагина → Загрузить обновление**, либо просто заменить файлы `engine/inc/auto_publisher_lib.php`/`auto_publisher_admin.php`/`engine/modules/auto_publisher.php` на сервере напрямую.
+
+## Безопасность
+- Токен сравнивается через `hash_equals`, нигде не хардкодится и не логируется.
+- Длины полей валидируются, URL проверяется через `filter_var`, все значения экранируются перед SQL (`$db->safesql()`).
+- Плагин не хранит и не обрабатывает Telegram-токены/доступы бота — знает только про свой собственный секретный токен.
