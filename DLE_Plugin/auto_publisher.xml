@@ -2,12 +2,11 @@
 <dleplugin>
 	<name>Auto Publisher</name>
 	<description><![CDATA[Автоматически публикует на сайте материалы, уже одобренные внешним ботом-модератором (Telegram).
-	Эндпоинт: POST ?do=auto_publisher (заголовок X-AutoPublisher-Token).
-	Настройки — в админпанели, раздел "Auto Publisher".
+	Настройки — в админпанели, раздел «Auto Publisher».
 	Бот: https://t.me/christnews_bot
 	]]></description>
 	<icon><![CDATA[]]></icon>
-	<version>1.6.3</version>
+	<version>1.6.4</version>
 	<dleversion>15.0</dleversion>
 	<versioncompare>greater</versioncompare>
 	<upgradeurl>https://christnews.onrender.com/dle-plugin/update</upgradeurl>
