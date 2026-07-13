@@ -15,6 +15,9 @@ $justRegeneratedToken = null;
 
 if (!empty($_POST['action']) && $_POST['action'] === 'save') {
     $cfg['category'] = isset($_POST['category']) ? (int)$_POST['category'] : 0;
+    $cfg['category_multi'] = !empty($_POST['category_multi']);
+    $postedCategories = isset($_POST['categories']) && is_array($_POST['categories']) ? $_POST['categories'] : [];
+    $cfg['categories'] = array_values(array_unique(array_filter(array_map('intval', $postedCategories))));
     $cfg['author'] = isset($_POST['author']) ? trim((string)$_POST['author']) : 'AutoPublisherBot';
     $cfg['auto_approve'] = !empty($_POST['auto_approve']);
     $postedImageMode = isset($_POST['image_mode']) ? (string)$_POST['image_mode'] : 'body';
@@ -35,16 +38,10 @@ if (!empty($_POST['action']) && $_POST['action'] === 'save') {
     ap_save_config($cfg);
 }
 
-$allCategories = [];
-if (!empty($cat_info) && is_array($cat_info)) {
-    foreach ($cat_info as $id => $cat) {
-        $allCategories[(int)$id] = isset($cat['name']) ? $cat['name'] : ('Категория ' . $id);
-    }
-}
-ksort($allCategories);
+$allCategories = ap_categories_map($cat_info);
 
 $endpoint = (isset($config['http_home_url']) ? rtrim($config['http_home_url'], '/') : '') . '/index.php?do=auto_publisher';
-$categoryConfigured = (int)$cfg['category'] > 0;
+$categoryConfigured = ap_category_configured($cfg);
 
 $imageModeLabels = [
     'body' => ['title' => 'В тело статьи', 'hint' => '&lt;img&gt; в начало short_story/full_story'],
@@ -145,18 +142,34 @@ $imageModeLabels = [
     <div class="panel panel-default">
       <div class="panel-body">
 
+        <div class="checkbox">
+          <label><input type="checkbox" name="category_multi" value="1"<?php echo !empty($cfg['category_multi']) ? ' checked' : ''; ?>> Разрешить несколько категорий для одной новости</label>
+        </div>
+        <p class="note">Влияет и на бот: при синхронизации цели («🔄 Синхронизировать с DLE») бот подтягивает этот режим и предлагает несколько категорий вместо одной, если он включён здесь.</p>
+
         <div class="form-group">
-          <label>Категория для публикаций</label>
+          <label>Категория для публикаций (одна — режим по умолчанию)</label>
           <select name="category" class="form-control">
             <option value="0">— выберите категорию —</option>
             <?php foreach ($allCategories as $id => $name): ?>
               <option value="<?php echo (int)$id; ?>"<?php echo ((int)$cfg['category'] === (int)$id) ? ' selected' : ''; ?>><?php echo ap_e($name); ?></option>
             <?php endforeach; ?>
           </select>
-          <?php if (!$categoryConfigured): ?>
-            <p class="note" style="color:#a94442;">Пока не выбрана — приём материалов будет отклоняться с ошибкой.</p>
-          <?php endif; ?>
         </div>
+
+        <div class="form-group">
+          <label>Категории по умолчанию (если включён режим «несколько категорий»)</label>
+          <select name="categories[]" class="form-control" multiple size="6">
+            <?php foreach ($allCategories as $id => $name): ?>
+              <option value="<?php echo (int)$id; ?>"<?php echo in_array((int)$id, array_map('intval', $cfg['categories']), true) ? ' selected' : ''; ?>><?php echo ap_e($name); ?></option>
+            <?php endforeach; ?>
+          </select>
+          <p class="note">Используется только когда бот не прислал собственный выбор категорий для конкретной новости.</p>
+        </div>
+
+        <?php if (!$categoryConfigured): ?>
+          <p class="note" style="color:#a94442;">Категория (или категории) пока не выбраны — приём материалов будет отклоняться с ошибкой.</p>
+        <?php endif; ?>
 
         <div class="form-group">
           <label>Автор публикаций</label>

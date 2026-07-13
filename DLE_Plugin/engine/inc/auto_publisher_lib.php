@@ -11,11 +11,30 @@ if (!defined('AP_CONFIG_FILE')) {
     define('AP_CONFIG_FILE', ROOT_DIR . '/engine/data/auto_publisher_config.php');
 }
 
+// Not read from auto_publisher.xml's own <version> at runtime (the running
+// PHP has no access to its own install manifest) — bump this by hand
+// alongside <version> on every release. Exposed via the ping response so
+// the bot can refuse to publish to a site running a plugin too old to
+// support whatever the bot is about to send it, instead of just failing.
+if (!defined('AP_PLUGIN_VERSION')) {
+    define('AP_PLUGIN_VERSION', '1.7.0');
+}
+
 function ap_default_config()
 {
     return [
         'token' => '',
         'category' => 0,
+        // Only used when category_multi is on — a category ID list applied
+        // when the bot doesn't send its own per-item override (see
+        // ap_resolve_categories() below).
+        'categories' => [],
+        // Off by default (backward compatible): a post gets exactly one
+        // category (the classic single-`category` field above). On: the
+        // bot may send several category IDs for one post, comma-joined
+        // into dle_post.category (DLE's own column already supports this
+        // natively — see .claude/skills/dle-plugin/SKILL.md).
+        'category_multi' => false,
         'author' => 'AutoPublisherBot',
         'auto_approve' => true,
         // How a generated cover image (see ap_save_image()) gets attached to
@@ -27,6 +46,69 @@ function ap_default_config()
         'image_mode' => 'body',
         'image_xfield_name' => 'image',
     ];
+}
+
+// True once a usable default category exists for the configured mode —
+// shared between the admin page's own "not configured yet" warning and the
+// publish endpoint's category_not_configured check, so the two can't drift.
+function ap_category_configured($cfg)
+{
+    if (!empty($cfg['category_multi'])) {
+        return !empty($cfg['categories']) && is_array($cfg['categories']);
+    }
+    return (int)$cfg['category'] > 0;
+}
+
+// Builds the { id => name } map of the site's real categories (from the
+// $cat_info global DLE already populates for every module — see the skill
+// doc's "Available globals inside a module") — used both by the admin
+// page's own <select> and by the ping response, so a "🔄 Синхронизировать с
+// DLE" tap on the bot side sees exactly the categories that actually exist.
+function ap_categories_map($catInfo)
+{
+    $out = [];
+    if (!empty($catInfo) && is_array($catInfo)) {
+        foreach ($catInfo as $id => $cat) {
+            $out[(int)$id] = isset($cat['name']) ? (string)$cat['name'] : ('Категория ' . (int)$id);
+        }
+    }
+    ksort($out);
+    return $out;
+}
+
+// Picks which category ID(s) a new post gets, as a comma-joined string
+// ready for dle_post.category — DLE's own column format for multiple
+// categories (see .claude/skills/dle-plugin/SKILL.md). `requested` is
+// whatever the bot's own request provided (single int, array of ints, or
+// absent/null) — an explicit per-item choice always wins over the
+// configured default, but only using IDs that actually exist in
+// $categoryMap; if every requested ID turns out invalid, falls back to the
+// configured default exactly as if nothing had been requested. Returns ''
+// if nothing usable is available either way (caller treats that as
+// category_not_configured).
+function ap_resolve_categories($cfg, $requested, $categoryMap)
+{
+    if ($requested !== null && $requested !== '') {
+        $ids = is_array($requested) ? $requested : [$requested];
+        $valid = [];
+        foreach ($ids as $id) {
+            $id = (int)$id;
+            if ($id > 0 && isset($categoryMap[$id])) {
+                $valid[] = $id;
+            }
+        }
+        if (!empty($valid)) {
+            return implode(',', array_unique($valid));
+        }
+    }
+    if (!empty($cfg['category_multi'])) {
+        $ids = array_filter(array_map('intval', (array)$cfg['categories']), function ($id) use ($categoryMap) {
+            return $id > 0 && isset($categoryMap[$id]);
+        });
+        return implode(',', array_unique($ids));
+    }
+    $id = (int)$cfg['category'];
+    return ($id > 0 && isset($categoryMap[$id])) ? (string)$id : '';
 }
 
 function ap_load_config()

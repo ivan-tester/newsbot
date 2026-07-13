@@ -6,7 +6,7 @@
 	Бот: https://t.me/christnews_bot
 	]]></description>
 	<icon><![CDATA[]]></icon>
-	<version>1.6.4</version>
+	<version>1.7.0</version>
 	<dleversion>15.0</dleversion>
 	<versioncompare>greater</versioncompare>
 	<upgradeurl>https://christnews.onrender.com/dle-plugin/update</upgradeurl>

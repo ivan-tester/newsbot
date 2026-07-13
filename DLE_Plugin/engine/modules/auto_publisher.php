@@ -43,13 +43,18 @@ if (!is_array($data)) {
     $data = $_POST;
 }
 
-// Ping mode: lets a caller validate the URL + token (and see whether a
-// category is configured) without creating anything. Used when connecting a
-// new site from the bot's UI.
+// Ping mode: lets a caller validate the URL + token, see the real category
+// list, and check the installed plugin version — without creating
+// anything. Used both when connecting a new site from the bot's UI and by
+// its "🔄 Синхронизировать с DLE" / "🧪 Тест соединения" buttons on an
+// already-added target.
 if (!empty($data['ping'])) {
     ap_respond(200, [
         'success' => true,
-        'category_configured' => (int)$cfg['category'] > 0,
+        'category_configured' => ap_category_configured($cfg),
+        'plugin_version' => AP_PLUGIN_VERSION,
+        'categories' => ap_categories_map($cat_info),
+        'multi_category' => !empty($cfg['category_multi']),
     ]);
 }
 
@@ -64,6 +69,12 @@ if ($teaser === '') {
     $teaser = $body;
 }
 $sourceUrl = isset($data['source_url']) ? trim((string)$data['source_url']) : '';
+// Optional per-item category override (single ID or array of IDs) — an
+// AI-suggested-then-moderator-confirmed category from the bot's side, see
+// ap_resolve_categories() for exactly how this interacts with the
+// configured default. Absent on older callers, which keeps working exactly
+// as before (falls through to the configured default).
+$requestedCategory = isset($data['category']) ? $data['category'] : (isset($data['categories']) ? $data['categories'] : null);
 // Optional AI-generated cover image, base64-encoded — see
 // src/pipeline/generateImage.js. Absent on older callers or when generation
 // failed/was skipped; ap_save_image() returns null for any of those or on a
@@ -85,7 +96,9 @@ if ($teaser === '' || mb_strlen($teaser, 'UTF-8') > 2000) {
 if ($sourceUrl !== '' && !filter_var($sourceUrl, FILTER_VALIDATE_URL)) {
     ap_respond(422, ['success' => false, 'error' => 'invalid_source_url']);
 }
-if (empty($cfg['category']) || (int)$cfg['category'] <= 0) {
+$categoryMap = ap_categories_map($cat_info);
+$categoryValue = ap_resolve_categories($cfg, $requestedCategory, $categoryMap);
+if ($categoryValue === '') {
     ap_respond(500, ['success' => false, 'error' => 'category_not_configured']);
 }
 
@@ -135,7 +148,7 @@ $db->query(
     "'" . $db->safesql($body) . "', " .
     "'" . $db->safesql($xfieldsValue) . "', " .
     "'" . $db->safesql($date) . "', " .
-    "'" . (int)$cfg['category'] . "', " .
+    "'" . $db->safesql($categoryValue) . "', " .
     "'" . $db->safesql($altName) . "', " .
     "'" . $approve . "', " .
     "'1', '1', '0')"
