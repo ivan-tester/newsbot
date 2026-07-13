@@ -4,11 +4,13 @@
 	<description><![CDATA[Автоматически публикует на сайте материалы, уже одобренные внешним ботом-модератором (Telegram).
 	Эндпоинт: POST ?do=auto_publisher (заголовок X-AutoPublisher-Token).
 	Настройки — в админпанели, раздел "Auto Publisher".
+	Бот: https://t.me/christnews_bot
 	]]></description>
 	<icon><![CDATA[]]></icon>
-	<version>1.6.2</version>
+	<version>1.6.3</version>
 	<dleversion>15.0</dleversion>
 	<versioncompare>greater</versioncompare>
+	<upgradeurl>https://christnews.onrender.com/dle-plugin/update</upgradeurl>
 	<mysqlinstall><![CDATA[
 CREATE TABLE IF NOT EXISTS `{prefix}_auto_publisher_posts` (
   `external_id` INT(11) NOT NULL,
