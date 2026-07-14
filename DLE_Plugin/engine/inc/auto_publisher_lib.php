@@ -17,7 +17,7 @@ if (!defined('AP_CONFIG_FILE')) {
 // the bot can refuse to publish to a site running a plugin too old to
 // support whatever the bot is about to send it, instead of just failing.
 if (!defined('AP_PLUGIN_VERSION')) {
-    define('AP_PLUGIN_VERSION', '1.8.0');
+    define('AP_PLUGIN_VERSION', '1.9.0');
 }
 
 function ap_default_config()
@@ -282,7 +282,21 @@ function ap_save_image($base64Data, $externalId)
     if ($ext === null) {
         return null;
     }
-    $dir = ROOT_DIR . '/uploads/auto_publisher';
+    // Saved under uploads/posts/auto_publisher/ (our own dedicated
+    // subfolder, but nested under DLE's own "posts" root), not
+    // uploads/auto_publisher/ directly — confirmed by reading DLE 20.0's
+    // real source (get_uploaded_image_info(), engine/inc/include/
+    // functions.inc.php): every caller that resolves a "Картинка"-type
+    // xfield value (both the admin edit-news widget, xfields.class.php's
+    // DLEXFields::FieldsList(), and the public-template xfvalue_*_url_*
+    // rendering) calls it with no root_folder override, so it defaults to
+    // 'posts' and checks uploads/posts/{value} — a value that isn't
+    // relative to that exact folder resolves to a path that doesn't
+    // exist, and DLE silently swaps in its own noimage.jpg placeholder
+    // instead of erroring. Found live: a real post's xfields value looked
+    // correct in the raw DB column, but the admin panel's own image
+    // widget showed "no image available" — this is why.
+    $dir = ROOT_DIR . '/uploads/posts/auto_publisher';
     if (!is_dir($dir) && !@mkdir($dir, 0755, true)) {
         return null;
     }
@@ -295,10 +309,9 @@ function ap_save_image($base64Data, $externalId)
         ? rtrim($config['http_home_url'], '/')
         : ap_detect_home_url();
     return [
-        'url' => $home . '/uploads/auto_publisher/' . $filename,
-        // Relative to uploads/ — matches the shape DLE's own "Картинка"
-        // xfield widget stores (e.g. `2025-09/ai.webp`), just under our own
-        // subfolder instead of DLE's uploads/posts/YYYY-MM/.
+        'url' => $home . '/uploads/posts/auto_publisher/' . $filename,
+        // Relative to uploads/posts/ — see the comment above for why it
+        // has to be resolvable under that exact root, not uploads/ itself.
         'relative_path' => 'auto_publisher/' . $filename,
         'width' => (int)$info[0],
         'height' => (int)$info[1],
