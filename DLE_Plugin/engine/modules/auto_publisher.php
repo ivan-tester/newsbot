@@ -121,6 +121,13 @@ $approve = !empty($cfg['auto_approve']) ? '1' : '0';
 $author = $cfg['author'] !== '' ? $cfg['author'] : 'AutoPublisherBot';
 $date = date('Y-m-d H:i:s');
 
+// Applied after the length checks above (they bound the actual textual
+// content, not markup this adds) and before the image tag below (so the
+// image ends up outside/above the wrapped paragraphs, not spliced inside
+// one). See ap_paragraphs_to_html() for why this exists at all.
+$teaser = ap_paragraphs_to_html($teaser);
+$body = ap_paragraphs_to_html($body);
+
 // Applied after the length checks above (an image tag is small relative to
 // the 2000/20000-char teaser/body caps) so it never counts against the
 // caller's own content budget. image_mode picks where it ends up: inline

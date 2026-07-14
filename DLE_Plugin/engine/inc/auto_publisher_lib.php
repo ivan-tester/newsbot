@@ -17,7 +17,7 @@ if (!defined('AP_CONFIG_FILE')) {
 // the bot can refuse to publish to a site running a plugin too old to
 // support whatever the bot is about to send it, instead of just failing.
 if (!defined('AP_PLUGIN_VERSION')) {
-    define('AP_PLUGIN_VERSION', '1.7.0');
+    define('AP_PLUGIN_VERSION', '1.8.0');
 }
 
 function ap_default_config()
@@ -143,6 +143,35 @@ function ap_generate_token()
 function ap_e($value)
 {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
+// Converts blank-line-separated paragraphs — the shape the bot's rewrite
+// prompt asks the model for (see the main ChristNews repo's
+// src/pipeline/rewrite.js, which explicitly asks for "a blank line between
+// each" paragraph) — into <p> blocks. Without this, short_story/full_story
+// get the literal "\n\n" text stored as-is, which renders as nothing in
+// the site's HTML template: whitespace outside a tag is insignificant in
+// HTML, so a multi-paragraph article reads as one unbroken block on the
+// site even though the exact same text renders with clean paragraph
+// breaks in Telegram (whose own message rendering honors literal
+// newlines directly, no HTML markup needed there).
+function ap_paragraphs_to_html($text)
+{
+    $text = trim((string)$text);
+    if ($text === '') {
+        return '';
+    }
+    $paragraphs = preg_split('/\n{2,}/', $text);
+    $paragraphs = array_map(function ($p) {
+        return nl2br(trim($p));
+    }, $paragraphs);
+    $paragraphs = array_filter($paragraphs, function ($p) {
+        return $p !== '';
+    });
+    if (!$paragraphs) {
+        return '';
+    }
+    return '<p>' . implode('</p><p>', $paragraphs) . '</p>';
 }
 
 // Sends a JSON response and terminates the request.
