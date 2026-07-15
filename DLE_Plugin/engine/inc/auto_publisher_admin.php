@@ -59,183 +59,218 @@ $imageModeLabels = [
     'xfields_image' => ['title' => '[xfield_img]', 'hint' => 'Формат хранения «путь_относительно_uploads|0|0|ШИРИНАxВЫСОТА|размер_файла»'],
     'xfields_text' => ['title' => '[xfield_text]', 'hint' => 'короткая ссылка'],
 ];
+
+// Local helpers mirroring the exact row/control markup DLE's own core
+// modules use (engine/inc/options.php, googlemap.php, userfields.php, ...)
+// — each core module redeclares its own private copies of these rather
+// than sharing a global one, so `ap_`-prefixing here follows that same
+// per-module-local convention instead of risking a redeclare. See
+// .claude/skills/dle-plugin/SKILL.md, "Admin settings page" for the
+// verified-against-source pattern this implements.
+function ap_show_row($title = '', $description = '', $field = '', $class = '')
+{
+    $classAttr = $class ? " class=\"{$class}\"" : '';
+    echo "<tr{$classAttr}>\n"
+        . "  <td class=\"col-xs-6 col-sm-6 col-md-7\"><h6 class=\"media-heading text-semibold\">{$title}</h6><div class=\"text-muted text-size-small hidden-xs\">{$description}</div></td>\n"
+        . "  <td class=\"col-xs-6 col-sm-6 col-md-5\">{$field}</td>\n"
+        . "</tr>\n";
+}
+
+function ap_make_dropdown($options, $name, $selected, $optional = '')
+{
+    $output = "<select class=\"uniform\" name=\"" . ap_e($name) . "\" {$optional}>\n";
+    foreach ($options as $value => $label) {
+        $selectedAttr = ((string)$selected === (string)$value) ? ' selected' : '';
+        $output .= '<option value="' . ap_e($value) . "\"{$selectedAttr}>" . ap_e($label) . "</option>\n";
+    }
+    $output .= '</select>';
+    return $output;
+}
+
+function ap_make_checkbox($name, $selected, $optional = '')
+{
+    $selectedAttr = $selected ? 'checked' : '';
+    return '<input class="switch" type="checkbox" name="' . ap_e($name) . "\" value=\"1\" {$selectedAttr} {$optional}>";
+}
 ?>
 <?php if ($message): ?>
 <div class="alert alert-success"><?php echo ap_e($message); ?></div>
 <?php endif; ?>
 
 <style>
-/* The site's own theme (light or dark skin) already colors links/text
-   correctly — Bootstrap's stock .nav-tabs>.active>a rule hardcodes a white
-   background + #555 text, which goes invisible (white-on-white) under a
-   dark skin that repaints link text white but doesn't know about this
-   plugin-injected tab bar. Strip the hardcoded fill and mark the active
-   tab with an underline in the surrounding text color instead, so it
-   reads correctly under either skin. */
-.ap-tabs .nav-tabs > li > a {
-  background: transparent;
-  color: inherit;
-}
-.ap-tabs .nav-tabs > li.active > a,
-.ap-tabs .nav-tabs > li.active > a:hover,
-.ap-tabs .nav-tabs > li.active > a:focus {
-  background: transparent;
-  color: inherit;
-  font-weight: bold;
-  border-color: transparent transparent currentColor;
-}
+/* Only one of the single-/multi-category rows is ever shown at a time
+   (see the category_multi switch handler below) — a plain utility
+   class instead of inline style so the toggle script only has to add
+   or remove one class name. */
+.ap-hidden-row { display: none; }
 </style>
 
-<form method="post">
-
-<div class="ap-tabs">
-<ul class="nav nav-tabs" role="tablist">
-  <li class="active"><a href="#ap-tab-connection" data-toggle="tab">Подключение</a></li>
-  <li><a href="#ap-tab-howto" data-toggle="tab">Как подключить</a></li>
-  <li><a href="#ap-tab-publish" data-toggle="tab">Публикация</a></li>
-  <li><a href="#ap-tab-image" data-toggle="tab">Картинка</a></li>
-</ul>
-
-<div class="tab-content">
-
-  <div class="tab-pane active" id="ap-tab-connection">
-    <div class="panel panel-default">
-      <div class="panel-body">
-
-        <div class="form-group">
-          <label>Эндпоинт</label>
-          <div><code><?php echo ap_e($endpoint); ?></code></div>
-          <p class="note">Заголовок запроса: <code>X-AutoPublisher-Token: &lt;токен&gt;</code></p>
-        </div>
-
-        <div class="form-group">
-          <label>Токен доступа</label>
-          <?php if ($justRegeneratedToken !== null): ?>
-            <div class="input-group">
-              <input type="text" class="form-control" readonly style="word-break:break-all;" value="<?php echo ap_e($justRegeneratedToken); ?>">
-              <span class="input-group-btn">
-                <button type="button" class="btn btn-default" id="ap-copy-token" data-token="<?php echo ap_e($justRegeneratedToken); ?>">Скопировать</button>
-              </span>
-            </div>
-            <p class="note" style="color:#a94442;">Сохраните сейчас — повторно в открытом виде не показывается.</p>
-          <?php elseif ($cfg['token'] !== ''): ?>
-            <p><code><?php echo ap_e(substr($cfg['token'], 0, 8)); ?>…</code> <span class="note">(скрыт)</span></p>
-          <?php else: ?>
-            <p><em>не сгенерирован — сохраните форму, чтобы создать</em></p>
-          <?php endif; ?>
-          <button type="button" class="btn btn-default" id="ap-regen-token-btn"><i class="fa fa-refresh position-left"></i>Сгенерировать новый токен</button>
-        </div>
-
-      </div>
-    </div>
+<!-- Toolbar: same navbar/tab structure DLE's own "Настройки скрипта"
+     (engine/inc/options.php) uses for its own tab bar — verified against
+     that file's real PHP, not just its rendered markup, so it inherits
+     the site's theme styling (light/dark) with no CSS of our own. Our
+     own ApChangeTab() below mirrors options.php's own ChangeOption() —
+     that function is declared locally inside options.php, not a global
+     utility, so this plugin declares its own copy the same way. -->
+<div class="navbar navbar-default navbar-component navbar-xs systemsettings">
+  <ul class="nav navbar-nav visible-xs-block">
+    <li class="full-width text-center"><a data-toggle="collapse" data-target="#ap-navbar-filter"><i class="fa fa-bars"></i></a></li>
+  </ul>
+  <div class="navbar-collapse collapse" id="ap-navbar-filter">
+    <ul class="nav navbar-nav">
+      <li class="active"><a onclick="ApChangeTab(this, 'ap-tab-connection');" class="tip" title="Токен доступа и адрес приёма материалов"><i class="fa fa-plug"></i> Подключение</a></li>
+      <li><a onclick="ApChangeTab(this, 'ap-tab-howto');" class="tip" title="Пошаговая инструкция"><i class="fa fa-question-circle"></i> Как подключить</a></li>
+      <li><a onclick="ApChangeTab(this, 'ap-tab-publish');" class="tip" title="Категории, автор, модерация"><i class="fa fa-newspaper-o"></i> Публикация</a></li>
+      <li><a onclick="ApChangeTab(this, 'ap-tab-image');" class="tip" title="Способ вставки обложки"><i class="fa fa-picture-o"></i> Картинка</a></li>
+    </ul>
   </div>
-
-  <div class="tab-pane" id="ap-tab-howto">
-    <div class="panel panel-default">
-      <div class="panel-body">
-        <ol style="margin:0; padding-left:20px;">
-          <li>Выберите категорию и укажите логин уже существующего на сайте пользователя как автора публикаций.</li>
-          <li>Нажмите «Сохранить» — при первом сохранении сгенерируется токен доступа. Он показывается один раз, сразу после генерации — скопируйте его сейчас.</li>
-          <li>В боте-модераторе: настройки публикации → добавить этот сайт как цель → введите адрес сайта → вставьте скопированный токен. Бот сам проверит подключение перед сохранением.</li>
-          <li>Готово — материалы, привязанные к этому сайту как цели публикации, начнут сюда приходить.</li>
-        </ol>
-        <div class="note" style="margin-top:10px; color:#a94442;">
-          <b>Отдельный обязательный шаг, без которого приём материалов не заработает:</b> в файле <code>main.tpl</code> активного шаблона сайта должен быть тег, подключающий обработчик плагина при <code>?do=auto_publisher</code> (обычная установка плагина через админку сама его не добавляет):<br>
-          <code>[available=auto_publisher]{include file="engine/modules/auto_publisher.php"}[/available]</code>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="tab-pane" id="ap-tab-publish">
-    <div class="panel panel-default">
-      <div class="panel-body">
-
-        <div class="form-group">
-          <label>Разрешить несколько категорий для одной новости</label><br>
-          <input class="switch" type="checkbox" name="category_multi" value="1"<?php echo !empty($cfg['category_multi']) ? ' checked' : ''; ?><?php echo !$dleMultiCategoryEnabled ? ' disabled' : ''; ?>>
-        </div>
-        <?php if (!$dleMultiCategoryEnabled): ?>
-          <p class="note" style="color:#a94442;">Мультикатегории выключены в настройках самого сайта (Настройки скрипта → Настройка системы → «Включить поддержку мультикатегорий на сайте») — включите их там, чтобы этот переключатель заработал.</p>
-        <?php endif; ?>
-        <p class="note">Влияет и на бот: при синхронизации цели («🔄 Синхронизировать с DLE») бот подтягивает этот режим и предлагает несколько категорий вместо одной, если он включён здесь.</p>
-
-        <div class="form-group" id="ap-single-category-group"<?php echo !empty($cfg['category_multi']) ? ' style="display:none;"' : ''; ?>>
-          <label>Категория по умолчанию</label>
-          <select name="category" class="uniform" data-width="100%">
-            <option value="0">— выберите категорию —</option>
-            <?php foreach ($allCategories as $id => $name): ?>
-              <option value="<?php echo (int)$id; ?>"<?php echo ((int)$cfg['category'] === (int)$id) ? ' selected' : ''; ?>><?php echo ap_e($name); ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-
-        <div class="form-group" id="ap-multi-category-group"<?php echo empty($cfg['category_multi']) ? ' style="display:none;"' : ''; ?>>
-          <label>Категории по умолчанию</label>
-          <select data-placeholder="Выберите категории" name="categories[]" class="categoryselect" style="width:100%;max-width:24.3em;" multiple>
-            <?php foreach ($allCategories as $id => $name): ?>
-              <option value="<?php echo (int)$id; ?>"<?php echo in_array((int)$id, array_map('intval', $cfg['categories']), true) ? ' selected' : ''; ?>><?php echo ap_e($name); ?></option>
-            <?php endforeach; ?>
-          </select>
-          <p class="note">Используется только когда бот не прислал собственный выбор категорий для конкретной новости.</p>
-        </div>
-
-        <?php if (!$categoryConfigured): ?>
-          <p class="note" style="color:#a94442;">Категория (или категории) пока не выбраны — приём материалов будет отклоняться с ошибкой.</p>
-        <?php endif; ?>
-
-        <div class="form-group">
-          <label>Автор публикаций</label>
-          <input type="text" name="author" class="form-control" value="<?php echo ap_e($cfg['author']); ?>">
-          <p class="note">Логин существующего пользователя сайта, от имени которого будут публиковаться материалы.</p>
-        </div>
-
-        <div class="form-group">
-          <label>Публиковать сразу, без дополнительной модерации на сайте</label><br>
-          <input class="switch" type="checkbox" name="auto_approve" value="1"<?php echo !empty($cfg['auto_approve']) ? ' checked' : ''; ?>>
-        </div>
-        <p class="note">Рекомендуется включить, если материалы уже прошли модерацию во внешнем боте. Если выключить, они будут падать в очередь модерации DLE (approve=0).</p>
-
-      </div>
-    </div>
-  </div>
-
-  <div class="tab-pane" id="ap-tab-image">
-    <div class="panel panel-default">
-      <div class="panel-body">
-
-        <div class="form-group">
-          <?php foreach ($imageModeLabels as $modeValue => $modeInfo): ?>
-            <div class="radio">
-              <label>
-                <input type="radio" name="image_mode" value="<?php echo ap_e($modeValue); ?>"<?php echo $cfg['image_mode'] === $modeValue ? ' checked' : ''; ?>>
-                <?php echo ap_e($modeInfo['title']); ?>
-                <span class="note"><?php echo $modeInfo['hint']; ?></span>
-              </label>
-            </div>
-          <?php endforeach; ?>
-        </div>
-
-        <div class="form-group">
-          <label>Имя доп. поля</label>
-          <input type="text" name="image_xfield_name" class="form-control" value="<?php echo ap_e($cfg['image_xfield_name']); ?>" placeholder="image">
-          <p class="note">Поле должно быть создано в настройках категории (тип «Текст» или «Картинка», совпадающий с выбранным выше) — используется только для вариантов [xfield_img]/[xfield_text]. Плагин только заполняет значение существующего поля, не создаёт его.</p>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
 </div>
+<!-- /toolbar -->
+
+<form action="" method="post" class="systemsettings">
+
+<div id="ap-tab-connection" class="panel panel-flat">
+  <table class="table table-striped">
+<?php
+ap_show_row(
+    'Эндпоинт',
+    'Заголовок запроса: <code>X-AutoPublisher-Token: &lt;токен&gt;</code>',
+    '<code>' . ap_e($endpoint) . '</code>'
+);
+
+if ($justRegeneratedToken !== null) {
+    $tokenField = '<div class="input-group">'
+        . '<input type="text" class="form-control" readonly style="word-break:break-all;" value="' . ap_e($justRegeneratedToken) . '">'
+        . '<span class="input-group-btn"><button type="button" class="btn bg-slate-600 btn-raised" id="ap-copy-token" data-token="' . ap_e($justRegeneratedToken) . '">Скопировать</button></span>'
+        . '</div>';
+    $tokenDescription = '<span style="color:#a94442;">Сохраните сейчас — повторно в открытом виде не показывается.</span>';
+} elseif ($cfg['token'] !== '') {
+    $tokenField = '<code>' . ap_e(substr($cfg['token'], 0, 8)) . '…</code> <span class="text-muted">(скрыт)</span>';
+    $tokenDescription = 'Используется в заголовке запроса выше — вставьте его при добавлении этого сайта в боте как цели публикации.';
+} else {
+    $tokenField = '<em>не сгенерирован — сохраните форму, чтобы создать</em>';
+    $tokenDescription = 'Сгенерируется автоматически при первом сохранении.';
+}
+$tokenField .= '<br><br><button type="button" class="btn bg-slate-600 btn-sm btn-raised position-left" id="ap-regen-token-btn"><i class="fa fa-refresh position-left"></i>Сгенерировать новый токен</button>';
+ap_show_row('Токен доступа', $tokenDescription, $tokenField);
+?>
+  </table>
 </div>
 
-<div class="form-group">
+<div id="ap-tab-howto" class="panel panel-flat" style="display:none">
+  <div class="panel-body">
+    <ol style="margin:0; padding-left:20px;">
+      <li>Выберите категорию и укажите логин уже существующего на сайте пользователя как автора публикаций.</li>
+      <li>Нажмите «Сохранить» — при первом сохранении сгенерируется токен доступа. Он показывается один раз, сразу после генерации — скопируйте его сейчас.</li>
+      <li>В боте-модераторе: настройки публикации → добавить этот сайт как цель → введите адрес сайта → вставьте скопированный токен. Бот сам проверит подключение перед сохранением.</li>
+      <li>Готово — материалы, привязанные к этому сайту как цели публикации, начнут сюда приходить.</li>
+    </ol>
+    <div class="text-muted text-size-small" style="margin-top:10px; color:#a94442;">
+      <b>Отдельный обязательный шаг, без которого приём материалов не заработает:</b> в файле <code>main.tpl</code> активного шаблона сайта должен быть тег, подключающий обработчик плагина при <code>?do=auto_publisher</code> (обычная установка плагина через админку сама его не добавляет):<br>
+      <code>[available=auto_publisher]{include file="engine/modules/auto_publisher.php"}[/available]</code>
+    </div>
+  </div>
+</div>
+
+<div id="ap-tab-publish" class="panel panel-flat" style="display:none">
+  <table class="table table-striped">
+<?php
+$multiDescription = 'Влияет и на бот: при синхронизации цели («🔄 Синхронизировать с DLE») бот подтягивает этот режим и предлагает несколько категорий вместо одной, если он включён здесь.';
+if (!$dleMultiCategoryEnabled) {
+    $multiDescription .= '<br><span style="color:#a94442;">Мультикатегории выключены в настройках самого сайта (Настройки скрипта → Настройка системы → «Включить поддержку мультикатегорий на сайте») — включите их там, чтобы этот переключатель заработал.</span>';
+}
+ap_show_row(
+    'Разрешить несколько категорий для одной новости',
+    $multiDescription,
+    ap_make_checkbox('category_multi', !empty($cfg['category_multi']), $dleMultiCategoryEnabled ? '' : 'disabled')
+);
+
+$singleCategoryOptions = ['0' => '— выберите категорию —'];
+foreach ($allCategories as $id => $name) {
+    $singleCategoryOptions[$id] = $name;
+}
+ap_show_row(
+    'Категория по умолчанию',
+    '',
+    ap_make_dropdown($singleCategoryOptions, 'category', $cfg['category'], 'data-width="100%"'),
+    !empty($cfg['category_multi']) ? 'ap-hidden-row' : ''
+);
+
+$categorySelectField = '<select data-placeholder="Выберите категории" name="categories[]" class="categoryselect" style="width:100%;max-width:24.3em;" multiple>';
+foreach ($allCategories as $id => $name) {
+    $selectedAttr = in_array((int)$id, array_map('intval', $cfg['categories']), true) ? ' selected' : '';
+    $categorySelectField .= '<option value="' . (int)$id . '"' . $selectedAttr . '>' . ap_e($name) . '</option>';
+}
+$categorySelectField .= '</select>';
+ap_show_row(
+    'Категории по умолчанию',
+    'Используется только когда бот не прислал собственный выбор категорий для конкретной новости.',
+    $categorySelectField,
+    empty($cfg['category_multi']) ? 'ap-hidden-row' : ''
+);
+
+if (!$categoryConfigured) {
+    ap_show_row('', '<span style="color:#a94442;">Категория (или категории) пока не выбраны — приём материалов будет отклоняться с ошибкой.</span>');
+}
+
+ap_show_row(
+    'Автор публикаций',
+    'Логин существующего пользователя сайта, от имени которого будут публиковаться материалы.',
+    '<input type="text" name="author" class="form-control" value="' . ap_e($cfg['author']) . '">'
+);
+
+ap_show_row(
+    'Публиковать сразу, без дополнительной модерации на сайте',
+    'Рекомендуется включить, если материалы уже прошли модерацию во внешнем боте. Если выключить, они будут падать в очередь модерации DLE (approve=0).',
+    ap_make_checkbox('auto_approve', !empty($cfg['auto_approve']))
+);
+?>
+  </table>
+</div>
+
+<div id="ap-tab-image" class="panel panel-flat" style="display:none">
+  <table class="table table-striped">
+<?php
+$imageModeField = '';
+foreach ($imageModeLabels as $modeValue => $modeInfo) {
+    $checkedAttr = ($cfg['image_mode'] === $modeValue) ? ' checked' : '';
+    $imageModeField .= '<div class="radio"><label>'
+        . '<input type="radio" name="image_mode" value="' . ap_e($modeValue) . '"' . $checkedAttr . '> '
+        . ap_e($modeInfo['title'])
+        . ' <span class="text-muted text-size-small">' . $modeInfo['hint'] . '</span>'
+        . '</label></div>';
+}
+ap_show_row('Способ вставки картинки', '', $imageModeField);
+ap_show_row(
+    'Имя доп. поля',
+    'Поле должно быть создано в настройках категории (тип «Текст» или «Картинка», совпадающий с выбранным выше) — используется только для вариантов [xfield_img]/[xfield_text]. Плагин только заполняет значение существующего поля, не создаёт его.',
+    '<input type="text" name="image_xfield_name" class="form-control" value="' . ap_e($cfg['image_xfield_name']) . '" placeholder="image">'
+);
+?>
+  </table>
+</div>
+
+<div class="form-group" style="margin-top:15px;">
   <input type="hidden" name="action" value="save">
   <button class="btn bg-teal btn-sm btn-raised position-left" type="submit"><i class="fa fa-floppy-o position-left"></i>Сохранить</button>
 </div>
 </form>
 
 <script>
+function ApChangeTab(obj, selectedTab) {
+  var ids = ['ap-tab-connection', 'ap-tab-howto', 'ap-tab-publish', 'ap-tab-image'];
+  var items = obj.closest('ul').querySelectorAll('li');
+  for (var i = 0; i < items.length; i++) {
+    items[i].classList.remove('active');
+  }
+  obj.parentNode.classList.add('active');
+  for (var j = 0; j < ids.length; j++) {
+    var pane = document.getElementById(ids[j]);
+    if (pane) pane.style.display = (ids[j] === selectedTab) ? '' : 'none';
+  }
+  return false;
+}
+
 (function () {
   var copyBtn = document.getElementById('ap-copy-token');
   if (!copyBtn) return;
@@ -280,18 +315,18 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Only one of the two category controls is ever relevant at a time —
-  // toggle which one shows as the switch is flipped, instead of both
+  // toggle which row shows as the switch is flipped, instead of both
   // sitting on screen together. Switchery dispatches a real 'change'
   // event on the underlying checkbox when clicked (see its own
   // handleOnchange in application.js), so a plain listener works.
   var categoryMultiSwitch = document.querySelector('input[name="category_multi"]');
-  var singleGroup = document.getElementById('ap-single-category-group');
-  var multiGroup = document.getElementById('ap-multi-category-group');
-  if (categoryMultiSwitch && singleGroup && multiGroup) {
+  var singleRow = document.querySelector('select[name="category"]').closest('tr');
+  var multiRow = document.querySelector('.categoryselect').closest('tr');
+  if (categoryMultiSwitch && singleRow && multiRow) {
     categoryMultiSwitch.addEventListener('change', function () {
       var isMulti = categoryMultiSwitch.checked;
-      singleGroup.style.display = isMulti ? 'none' : '';
-      multiGroup.style.display = isMulti ? '' : 'none';
+      singleRow.classList.toggle('ap-hidden-row', isMulti);
+      multiRow.classList.toggle('ap-hidden-row', !isMulti);
     });
   }
 
@@ -317,32 +352,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 });
-
-(function () {
-  // Plain-JS tab switching so this works even if the current admin skin
-  // doesn't wire up Bootstrap's own data-toggle="tab" handler for
-  // plugin-injected sections (the core settings page tabs, e.g. Общие/
-  // Безопасность/Новости, load their own bootstrap.js — this section
-  // can't assume that ran).
-  var tabLinks = document.querySelectorAll('.nav-tabs a[data-toggle="tab"]');
-  for (var i = 0; i < tabLinks.length; i++) {
-    tabLinks[i].addEventListener('click', function (e) {
-      e.preventDefault();
-      var targetId = this.getAttribute('href');
-      var tabs = this.closest('.nav-tabs');
-      var panes = tabs.parentNode.querySelectorAll('.tab-pane');
-      var links = tabs.querySelectorAll('li');
-      for (var j = 0; j < links.length; j++) {
-        links[j].classList.remove('active');
-      }
-      for (var k = 0; k < panes.length; k++) {
-        panes[k].classList.remove('active');
-      }
-      this.parentNode.classList.add('active');
-      document.querySelector(targetId).classList.add('active');
-    });
-  }
-})();
 </script>
 <?php
 echofooter();
