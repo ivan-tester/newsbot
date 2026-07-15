@@ -217,7 +217,7 @@ $imageModeLabels = [
 
 <div class="form-group">
   <input type="hidden" name="action" value="save">
-  <button class="btn btn-success" type="submit">Сохранить</button>
+  <button class="btn bg-teal btn-sm btn-raised position-left" type="submit"><i class="fa fa-floppy-o position-left"></i>Сохранить</button>
 </div>
 </form>
 
