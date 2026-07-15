@@ -123,10 +123,7 @@ $imageModeLabels = [
           <?php else: ?>
             <p><em>не сгенерирован — сохраните форму, чтобы создать</em></p>
           <?php endif; ?>
-          <div class="form-group">
-            <label>Сгенерировать новый токен (старый перестанет работать)</label><br>
-            <input class="switch" type="checkbox" name="regenerate_token" value="1">
-          </div>
+          <button type="button" class="btn btn-default" id="ap-regen-token-btn"><i class="fa fa-refresh position-left"></i>Сгенерировать новый токен</button>
         </div>
 
       </div>
@@ -163,8 +160,8 @@ $imageModeLabels = [
         <?php endif; ?>
         <p class="note">Влияет и на бот: при синхронизации цели («🔄 Синхронизировать с DLE») бот подтягивает этот режим и предлагает несколько категорий вместо одной, если он включён здесь.</p>
 
-        <div class="form-group">
-          <label>Категория для публикаций (одна — режим по умолчанию)</label>
+        <div class="form-group" id="ap-single-category-group"<?php echo !empty($cfg['category_multi']) ? ' style="display:none;"' : ''; ?>>
+          <label>Категория по умолчанию</label>
           <select name="category" class="uniform" data-width="100%">
             <option value="0">— выберите категорию —</option>
             <?php foreach ($allCategories as $id => $name): ?>
@@ -173,8 +170,8 @@ $imageModeLabels = [
           </select>
         </div>
 
-        <div class="form-group">
-          <label>Категории по умолчанию (если включён режим «несколько категорий»)</label>
+        <div class="form-group" id="ap-multi-category-group"<?php echo empty($cfg['category_multi']) ? ' style="display:none;"' : ''; ?>>
+          <label>Категории по умолчанию</label>
           <select data-placeholder="Выберите категории" name="categories[]" class="categoryselect" style="width:100%;max-width:24.3em;" multiple>
             <?php foreach ($allCategories as $id => $name): ?>
               <option value="<?php echo (int)$id; ?>"<?php echo in_array((int)$id, array_map('intval', $cfg['categories']), true) ? ' selected' : ''; ?>><?php echo ap_e($name); ?></option>
@@ -265,13 +262,61 @@ $imageModeLabels = [
   });
 })();
 
-if (window.jQuery) {
-  // chosen's own library is bundled globally by the admin skin
-  // (application.js/application.css) but, unlike select.uniform and
-  // .switch, its init call is NOT automatic — DLE's own editnews.php
-  // calls this explicitly per-page, so this plugin page has to as well.
-  jQuery('.categoryselect').chosen({ allow_single_deselect: true, no_results_text: 'Категория не найдена' });
-}
+document.addEventListener('DOMContentLoaded', function () {
+  // Deferred vs. non-deferred load order matters here: this whole
+  // <script> block is a plain inline script, so it runs immediately as
+  // the parser reaches it — *before* application.js, which has
+  // `defer` and therefore only runs once the document is fully parsed
+  // (i.e. right before DOMContentLoaded). Calling jQuery('.x').chosen()
+  // at parse time would hit `chosen` before application.js has even
+  // defined it. Waiting for DOMContentLoaded guarantees application.js
+  // (and the jQuery/chosen/Switchery libraries it bundles) already ran.
+  if (window.jQuery) {
+    // chosen's own library is bundled globally by the admin skin
+    // (application.js/application.css) but, unlike select.uniform and
+    // .switch, its init call is NOT automatic — DLE's own editnews.php
+    // calls this explicitly per-page, so this plugin page has to as well.
+    jQuery('.categoryselect').chosen({ allow_single_deselect: true, no_results_text: 'Категория не найдена' });
+  }
+
+  // Only one of the two category controls is ever relevant at a time —
+  // toggle which one shows as the switch is flipped, instead of both
+  // sitting on screen together. Switchery dispatches a real 'change'
+  // event on the underlying checkbox when clicked (see its own
+  // handleOnchange in application.js), so a plain listener works.
+  var categoryMultiSwitch = document.querySelector('input[name="category_multi"]');
+  var singleGroup = document.getElementById('ap-single-category-group');
+  var multiGroup = document.getElementById('ap-multi-category-group');
+  if (categoryMultiSwitch && singleGroup && multiGroup) {
+    categoryMultiSwitch.addEventListener('change', function () {
+      var isMulti = categoryMultiSwitch.checked;
+      singleGroup.style.display = isMulti ? 'none' : '';
+      multiGroup.style.display = isMulti ? '' : 'none';
+    });
+  }
+
+  // Token regeneration used to be a checkbox you had to tick and then
+  // separately hit "Сохранить" — easy to trigger by accident. Now it's
+  // its own button: confirm, then submit the form with a one-off
+  // hidden field so the existing save handler (which already knows how
+  // to regenerate + reveal a token, see $justRegeneratedToken above)
+  // does the rest, same as it always has.
+  var regenBtn = document.getElementById('ap-regen-token-btn');
+  if (regenBtn) {
+    regenBtn.addEventListener('click', function () {
+      if (!window.confirm('Старый токен перестанет работать, все сайты, использующие его, отключатся от бота. Сгенерировать новый токен?')) {
+        return;
+      }
+      var form = regenBtn.closest('form');
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'regenerate_token';
+      hidden.value = '1';
+      form.appendChild(hidden);
+      form.submit();
+    });
+  }
+});
 
 (function () {
   // Plain-JS tab switching so this works even if the current admin skin

@@ -17,7 +17,7 @@ if (!defined('AP_CONFIG_FILE')) {
 // the bot can refuse to publish to a site running a plugin too old to
 // support whatever the bot is about to send it, instead of just failing.
 if (!defined('AP_PLUGIN_VERSION')) {
-    define('AP_PLUGIN_VERSION', '1.11.0');
+    define('AP_PLUGIN_VERSION', '1.12.0');
 }
 
 function ap_default_config()
