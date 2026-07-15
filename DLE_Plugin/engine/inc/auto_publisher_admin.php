@@ -13,9 +13,20 @@ $cfg = ap_load_config();
 $message = '';
 $justRegeneratedToken = null;
 
+// Site-wide switch (Настройки скрипта → Настройка системы → «Включить
+// поддержку мультикатегорий на сайте», engine/inc/options.php's own
+// allow_multi_category) — our own category_multi below is a *separate*
+// config value with no relation to this one unless we check it ourselves.
+// If the site-wide switch is off, dle_post.category still technically
+// accepts a comma-joined value, but nothing in DLE's own admin UI expects
+// it and there's no guarantee every template/module reading that column
+// was written to handle more than one id — so this stays a hard
+// requirement (silently forced off on save below), not just a warning.
+$dleMultiCategoryEnabled = !empty($config['allow_multi_category']);
+
 if (!empty($_POST['action']) && $_POST['action'] === 'save') {
     $cfg['category'] = isset($_POST['category']) ? (int)$_POST['category'] : 0;
-    $cfg['category_multi'] = !empty($_POST['category_multi']);
+    $cfg['category_multi'] = $dleMultiCategoryEnabled && !empty($_POST['category_multi']);
     $postedCategories = isset($_POST['categories']) && is_array($_POST['categories']) ? $_POST['categories'] : [];
     $cfg['categories'] = array_values(array_unique(array_filter(array_map('intval', $postedCategories))));
     $cfg['author'] = isset($_POST['author']) ? trim((string)$_POST['author']) : 'AutoPublisherBot';
@@ -112,8 +123,9 @@ $imageModeLabels = [
           <?php else: ?>
             <p><em>не сгенерирован — сохраните форму, чтобы создать</em></p>
           <?php endif; ?>
-          <div class="checkbox">
-            <label><input type="checkbox" name="regenerate_token" value="1"> Сгенерировать новый токен (старый перестанет работать)</label>
+          <div class="form-group">
+            <label>Сгенерировать новый токен (старый перестанет работать)</label><br>
+            <input class="switch" type="checkbox" name="regenerate_token" value="1">
           </div>
         </div>
 
@@ -142,14 +154,18 @@ $imageModeLabels = [
     <div class="panel panel-default">
       <div class="panel-body">
 
-        <div class="checkbox">
-          <label><input type="checkbox" name="category_multi" value="1"<?php echo !empty($cfg['category_multi']) ? ' checked' : ''; ?>> Разрешить несколько категорий для одной новости</label>
+        <div class="form-group">
+          <label>Разрешить несколько категорий для одной новости</label><br>
+          <input class="switch" type="checkbox" name="category_multi" value="1"<?php echo !empty($cfg['category_multi']) ? ' checked' : ''; ?><?php echo !$dleMultiCategoryEnabled ? ' disabled' : ''; ?>>
         </div>
+        <?php if (!$dleMultiCategoryEnabled): ?>
+          <p class="note" style="color:#a94442;">Мультикатегории выключены в настройках самого сайта (Настройки скрипта → Настройка системы → «Включить поддержку мультикатегорий на сайте») — включите их там, чтобы этот переключатель заработал.</p>
+        <?php endif; ?>
         <p class="note">Влияет и на бот: при синхронизации цели («🔄 Синхронизировать с DLE») бот подтягивает этот режим и предлагает несколько категорий вместо одной, если он включён здесь.</p>
 
         <div class="form-group">
           <label>Категория для публикаций (одна — режим по умолчанию)</label>
-          <select name="category" class="form-control">
+          <select name="category" class="uniform" data-width="100%">
             <option value="0">— выберите категорию —</option>
             <?php foreach ($allCategories as $id => $name): ?>
               <option value="<?php echo (int)$id; ?>"<?php echo ((int)$cfg['category'] === (int)$id) ? ' selected' : ''; ?>><?php echo ap_e($name); ?></option>
@@ -159,7 +175,7 @@ $imageModeLabels = [
 
         <div class="form-group">
           <label>Категории по умолчанию (если включён режим «несколько категорий»)</label>
-          <select name="categories[]" class="form-control" multiple size="6">
+          <select data-placeholder="Выберите категории" name="categories[]" class="categoryselect" style="width:100%;max-width:24.3em;" multiple>
             <?php foreach ($allCategories as $id => $name): ?>
               <option value="<?php echo (int)$id; ?>"<?php echo in_array((int)$id, array_map('intval', $cfg['categories']), true) ? ' selected' : ''; ?>><?php echo ap_e($name); ?></option>
             <?php endforeach; ?>
@@ -177,8 +193,9 @@ $imageModeLabels = [
           <p class="note">Логин существующего пользователя сайта, от имени которого будут публиковаться материалы.</p>
         </div>
 
-        <div class="checkbox">
-          <label><input type="checkbox" name="auto_approve" value="1"<?php echo !empty($cfg['auto_approve']) ? ' checked' : ''; ?>> Публиковать сразу, без дополнительной модерации на сайте</label>
+        <div class="form-group">
+          <label>Публиковать сразу, без дополнительной модерации на сайте</label><br>
+          <input class="switch" type="checkbox" name="auto_approve" value="1"<?php echo !empty($cfg['auto_approve']) ? ' checked' : ''; ?>>
         </div>
         <p class="note">Рекомендуется включить, если материалы уже прошли модерацию во внешнем боте. Если выключить, они будут падать в очередь модерации DLE (approve=0).</p>
 
@@ -247,6 +264,14 @@ $imageModeLabels = [
     }
   });
 })();
+
+if (window.jQuery) {
+  // chosen's own library is bundled globally by the admin skin
+  // (application.js/application.css) but, unlike select.uniform and
+  // .switch, its init call is NOT automatic — DLE's own editnews.php
+  // calls this explicitly per-page, so this plugin page has to as well.
+  jQuery('.categoryselect').chosen({ allow_single_deselect: true, no_results_text: 'Категория не найдена' });
+}
 
 (function () {
   // Plain-JS tab switching so this works even if the current admin skin
